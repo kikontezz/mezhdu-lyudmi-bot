@@ -1,7 +1,8 @@
 import os
 import logging
-import threading
-from http.server import BaseHTTPRequestHandler, HTTPServer
+
+from flask import Flask
+from threading import Thread
 
 from telegram import Update
 from telegram.ext import (
@@ -18,37 +19,27 @@ logging.basicConfig(
 )
 
 TOKEN = os.getenv("BOT_TOKEN")
+PORT = int(os.getenv("PORT", "10000"))
+
+app = Flask(__name__)
 
 
-class HealthHandler(BaseHTTPRequestHandler):
-    def do_GET(self):
-        if self.path == "/healthz":
-            self.send_response(200)
-            self.send_header("Content-Type", "text/plain")
-            self.end_headers()
-            self.wfile.write(b"OK")
-        else:
-            self.send_response(404)
-            self.end_headers()
-
-    def log_message(self, format, *args):
-        pass
+@app.route("/")
+def home():
+    return "Между людьми — бот работает!"
 
 
-def start_web_server():
-    port = int(os.getenv("PORT", "10000"))
-    server = HTTPServer(("0.0.0.0", port), HealthHandler)
-
-    print(f"HTTP server started on port {port}")
-
-    server.serve_forever()
+@app.route("/healthz")
+def healthz():
+    return "OK"
 
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         "Привет! 👋\n\n"
-        "Это «Между людьми» — анонимный чат, где можно "
-        "пообщаться с другим человеком.\n\n"
+        "Это «Между людьми» — анонимный чат.\n\n"
+        "Здесь можно будет найти собеседника "
+        "и общаться анонимно.\n\n"
         "Команды:\n"
         "/start — начать\n"
         "/help — помощь\n"
@@ -60,10 +51,10 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         "Доступные команды:\n\n"
-        "/start — начать работу с ботом\n"
+        "/start — начать\n"
         "/help — помощь\n"
         "/rules — правила\n"
-        "/about — информация о боте"
+        "/about — о боте"
     )
 
 
@@ -72,7 +63,7 @@ async def rules(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "📋 Правила:\n\n"
         "1. Уважай собеседника.\n"
         "2. Не публикуй личные данные.\n"
-        "3. Не отправляй запрещённый или опасный контент.\n"
+        "3. Не отправляй опасный или запрещённый контент.\n"
         "4. Не угрожай другим пользователям.\n"
         "5. При нарушении правил используй жалобу.\n\n"
         "Возраст: 14+."
@@ -81,17 +72,23 @@ async def rules(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def about(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
-        "ℹ️ О боте\n\n"
-        "«Между людьми» — анонимный Telegram-бот "
-        "для общения один-на-один.\n\n"
-        "Система поиска собеседника находится в разработке."
+        "ℹ️ «Между людьми» — анонимный Telegram-бот "
+        "для общения один-на-один."
     )
 
 
 async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         "Сообщение получено.\n\n"
-        "Система поиска собеседника пока находится в разработке."
+        "Поиск собеседника пока находится в разработке."
+    )
+
+
+def run_web_server():
+    app.run(
+        host="0.0.0.0",
+        port=PORT,
+        use_reloader=False,
     )
 
 
@@ -99,11 +96,10 @@ def main():
     if not TOKEN:
         raise RuntimeError("Не найден BOT_TOKEN")
 
-    web_thread = threading.Thread(
-        target=start_web_server,
+    Thread(
+        target=run_web_server,
         daemon=True,
-    )
-    web_thread.start()
+    ).start()
 
     application = Application.builder().token(TOKEN).build()
 
@@ -120,7 +116,6 @@ def main():
     )
 
     print("Бот запущен!")
-
     application.run_polling()
 
 
