@@ -1,5 +1,7 @@
 import os
 import logging
+import threading
+from http.server import BaseHTTPRequestHandler, HTTPServer
 
 from telegram import Update
 from telegram.ext import (
@@ -18,13 +20,35 @@ logging.basicConfig(
 TOKEN = os.getenv("BOT_TOKEN")
 
 
+class HealthHandler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        if self.path == "/healthz":
+            self.send_response(200)
+            self.send_header("Content-Type", "text/plain")
+            self.end_headers()
+            self.wfile.write(b"OK")
+        else:
+            self.send_response(404)
+            self.end_headers()
+
+    def log_message(self, format, *args):
+        pass
+
+
+def start_web_server():
+    port = int(os.getenv("PORT", "10000"))
+    server = HTTPServer(("0.0.0.0", port), HealthHandler)
+
+    print(f"HTTP server started on port {port}")
+
+    server.serve_forever()
+
+
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         "Привет! 👋\n\n"
         "Это «Между людьми» — анонимный чат, где можно "
         "пообщаться с другим человеком.\n\n"
-        "Здесь никто не видит твоё имя и профиль собеседника.\n\n"
-        "Перед началом обязательно ознакомься с правилами.\n\n"
         "Команды:\n"
         "/start — начать\n"
         "/help — помощь\n"
@@ -60,9 +84,7 @@ async def about(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "ℹ️ О боте\n\n"
         "«Между людьми» — анонимный Telegram-бот "
         "для общения один-на-один.\n\n"
-        "На следующем этапе мы добавим поиск собеседника, "
-        "анонимную передачу сообщений, завершение диалога "
-        "и систему жалоб."
+        "Система поиска собеседника находится в разработке."
     )
 
 
@@ -77,6 +99,12 @@ def main():
     if not TOKEN:
         raise RuntimeError("Не найден BOT_TOKEN")
 
+    web_thread = threading.Thread(
+        target=start_web_server,
+        daemon=True,
+    )
+    web_thread.start()
+
     application = Application.builder().token(TOKEN).build()
 
     application.add_handler(CommandHandler("start", start))
@@ -85,10 +113,14 @@ def main():
     application.add_handler(CommandHandler("about", about))
 
     application.add_handler(
-        MessageHandler(filters.TEXT & ~filters.COMMAND, message_handler)
+        MessageHandler(
+            filters.TEXT & ~filters.COMMAND,
+            message_handler,
+        )
     )
 
     print("Бот запущен!")
+
     application.run_polling()
 
 
