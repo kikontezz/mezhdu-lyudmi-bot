@@ -1,8 +1,8 @@
 import os
 import logging
+from threading import Thread
 
 from flask import Flask
-from threading import Thread
 
 from telegram import Update
 from telegram.ext import (
@@ -13,13 +13,30 @@ from telegram.ext import (
     filters,
 )
 
+
+# =========================
+# ЛОГИ
+# =========================
+
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     level=logging.INFO,
 )
 
+logger = logging.getLogger(__name__)
+
+
+# =========================
+# НАСТРОЙКИ
+# =========================
+
 TOKEN = os.getenv("BOT_TOKEN")
 PORT = int(os.getenv("PORT", "10000"))
+
+
+# =========================
+# FLASK
+# =========================
 
 app = Flask(__name__)
 
@@ -33,6 +50,10 @@ def home():
 def healthz():
     return "OK"
 
+
+# =========================
+# TELEGRAM КОМАНДЫ
+# =========================
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
@@ -77,12 +98,19 @@ async def about(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 
-async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def message_handler(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+):
     await update.message.reply_text(
         "Сообщение получено.\n\n"
         "Поиск собеседника пока находится в разработке."
     )
 
+
+# =========================
+# FLASK SERVER
+# =========================
 
 def run_web_server():
     app.run(
@@ -92,22 +120,59 @@ def run_web_server():
     )
 
 
-def main():
-    if not TOKEN:
-        raise RuntimeError("Не найден BOT_TOKEN")
+# =========================
+# ЗАПУСК БОТА
+# =========================
 
-    Thread(
+def main():
+
+    if not TOKEN:
+        raise RuntimeError(
+            "Не найден BOT_TOKEN. "
+            "Добавь BOT_TOKEN в Environment Variables Render."
+        )
+
+    # Запускаем Flask в отдельном потоке
+    web_thread = Thread(
         target=run_web_server,
         daemon=True,
-    ).start()
+    )
 
-    application = Application.builder().token(TOKEN).build()
+    web_thread.start()
 
-    application.add_handler(CommandHandler("start", start))
-    application.add_handler(CommandHandler("help", help_command))
-    application.add_handler(CommandHandler("rules", rules))
-    application.add_handler(CommandHandler("about", about))
+    # Создаём Telegram Application
+    application = (
+        Application.builder()
+        .token(TOKEN)
+        .connect_timeout(30)
+        .read_timeout(30)
+        .write_timeout(30)
+        .pool_timeout(30)
+        .get_updates_connect_timeout(30)
+        .get_updates_read_timeout(30)
+        .get_updates_write_timeout(30)
+        .get_updates_pool_timeout(30)
+        .build()
+    )
 
+    # Команды
+    application.add_handler(
+        CommandHandler("start", start)
+    )
+
+    application.add_handler(
+        CommandHandler("help", help_command)
+    )
+
+    application.add_handler(
+        CommandHandler("rules", rules)
+    )
+
+    application.add_handler(
+        CommandHandler("about", about)
+    )
+
+    # Обычные текстовые сообщения
     application.add_handler(
         MessageHandler(
             filters.TEXT & ~filters.COMMAND,
@@ -115,8 +180,13 @@ def main():
         )
     )
 
-    print("Бот запущен!")
-    application.run_polling()
+    print("Бот запускается...")
+
+    # Запускаем polling
+    application.run_polling(
+        drop_pending_updates=True,
+        bootstrap_retries=5,
+    )
 
 
 if __name__ == "__main__":
