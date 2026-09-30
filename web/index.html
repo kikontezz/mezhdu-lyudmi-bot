@@ -2,227 +2,242 @@
 <html lang="ru">
 <head>
     <meta charset="UTF-8">
-
-    <meta
-        name="viewport"
-        content="width=device-width, initial-scale=1.0, maximum-scale=1.0"
-    >
-
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
     <title>Между людьми</title>
-
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
-
-    <style>
-        * {
-            box-sizing: border-box;
-        }
-
-        body {
-            margin: 0;
-            min-height: 100vh;
-
-            font-family:
-                -apple-system,
-                BlinkMacSystemFont,
-                "Segoe UI",
-                Roboto,
-                sans-serif;
-
-            background: var(--tg-theme-bg-color, #ffffff);
-            color: var(--tg-theme-text-color, #111111);
-        }
-
-        .app {
-            min-height: 100vh;
-            display: flex;
-            flex-direction: column;
-            padding: 24px 18px;
-        }
-
-        .header {
-            text-align: center;
-            margin-top: 30px;
-        }
-
-        .logo {
-            width: 82px;
-            height: 82px;
-
-            margin: 0 auto 18px;
-
-            border-radius: 24px;
-
-            display: flex;
-            align-items: center;
-            justify-content: center;
-
-            font-size: 40px;
-
-            background: var(--tg-theme-button-color, #2481cc);
-            color: var(--tg-theme-button-text-color, #ffffff);
-        }
-
-        h1 {
-            margin: 0;
-            font-size: 28px;
-        }
-
-        .description {
-            margin: 12px auto 0;
-            max-width: 320px;
-
-            font-size: 15px;
-            line-height: 1.5;
-
-            opacity: 0.65;
-        }
-
-        .menu {
-            margin-top: 40px;
-
-            display: flex;
-            flex-direction: column;
-            gap: 12px;
-        }
-
-        button {
-            width: 100%;
-
-            border: 0;
-            border-radius: 16px;
-
-            padding: 17px;
-
-            font-size: 16px;
-            font-weight: 600;
-
-            cursor: pointer;
-
-            background:
-                var(--tg-theme-secondary-bg-color, #f1f1f1);
-
-            color:
-                var(--tg-theme-text-color, #111111);
-        }
-
-        button.primary {
-            background:
-                var(--tg-theme-button-color, #2481cc);
-
-            color:
-                var(--tg-theme-button-text-color, #ffffff);
-        }
-
-        .footer {
-            margin-top: auto;
-            padding-top: 30px;
-
-            text-align: center;
-
-            font-size: 12px;
-            opacity: 0.45;
-        }
-    </style>
+    <link rel="stylesheet" href="/static/style.css">
 </head>
-
 <body>
 
-<div class="app">
-
-    <div class="header">
-
-        <div class="logo">
-            💬
-        </div>
-
-        <h1>
-            Между людьми
-        </h1>
-
-        <div class="description">
-            Анонимное общение один-на-один.
-            Найди собеседника и начни разговор.
-        </div>
-
-    </div>
-
-    <div class="menu">
-
-        <button
-            class="primary"
-            onclick="findPartner()"
-        >
-            🔎 Найти собеседника
-        </button>
-
-        <button onclick="profile()">
-            👤 Мой профиль
-        </button>
-
-        <button onclick="settings()">
-            ⚙️ Настройки
-        </button>
-
-        <button onclick="rules()">
-            📋 Правила
-        </button>
-
-        <button onclick="about()">
-            ℹ️ О приложении
-        </button>
-
-    </div>
-
-    <div class="footer">
-        «Между людьми» • анонимное общение
-    </div>
-
+<div id="loader" class="loader">
+    <img src="/static/logo.png" alt="между людьми" class="loader-logo">
 </div>
 
-<script>
+<!-- ГЛАВНЫЙ ЭКРАН -->
+<section id="screen-home" class="screen theme-dark">
+    <div class="scroll">
+        <div class="home-head">
+            <img src="/static/logo.png" alt="между людьми" class="logo">
+        </div>
+        <div class="menu">
+            <button class="btn btn-dark btn-big" onclick="startSearch()">👥 Найти собеседника</button>
+            <div class="menu-row">
+                <button class="btn btn-soft" onclick="show('profile')">
+                    <span class="btn-ico">👤</span>Профиль
+                </button>
+                <button class="btn btn-soft" onclick="show('settings')">
+                    <span class="btn-ico">⚙️</span>Настройки
+                </button>
+            </div>
+            <button class="btn btn-soft" onclick="show('rules')">📋 Правила</button>
+            <button class="btn btn-soft" onclick="show('about')">ℹ️ О нас</button>
+            <button class="btn btn-soft admin-only" onclick="show('admin')" style="display:none">
+                🛡 Админка
+            </button>
+        </div>
+        <div class="home-footer">
+            <span class="footer-ico">👥</span>
+            ищи поддержку / выговаривайся
+        </div>
+    </div>
+</section>
 
-    const tg = window.Telegram.WebApp;
+<!-- ПОИСК -->
+<section id="screen-search" class="screen theme-dark">
+    <div class="scroll">
+        <div class="home-head">
+            <img src="/static/logo.png" alt="между людьми" class="logo">
+        </div>
+        <div class="card card-dark search-card">
+            <div class="card-title">Поиск&nbsp; собеседника</div>
+            <div class="spinner"></div>
+            <div class="search-text">Ищем человека для общения....</div>
+            <div class="search-sub">Обычно это занимает от 10 до 30 секунд</div>
+            <button class="btn btn-dark btn-small" onclick="cancelSearch()">отменить поиск</button>
+        </div>
+    </div>
+</section>
 
-    tg.ready();
-    tg.expand();
+<!-- СОБЕСЕДНИК НАЙДЕН -->
+<section id="screen-found" class="screen theme-light">
+    <div class="scroll">
+        <div class="light-head">
+            <img src="/static/logo.png" alt="между людьми" class="logo">
+        </div>
+        <div class="card card-light found-card">
+            <div class="found-title">Собеседник найден!</div>
+            <div class="avatar-big" id="found-avatar"></div>
+            <div class="pill">🕓 Анонимное общение</div>
+            <button class="btn btn-dark" onclick="openChat()">💬 Начать общение</button>
+            <button class="btn btn-outline" onclick="startSearch()">🔁 Искать другого</button>
+        </div>
+        <div class="found-footer">
+            <span>🤍</span>
+            <div>Стараюсь как могут сделать ваше<br>общение анонимным и комфортным</div>
+        </div>
+    </div>
+</section>
 
-    function findPartner() {
-        tg.showAlert(
-            "🔎 Поиск собеседника будет доступен в следующей версии."
-        );
-    }
+<!-- ЧАТ -->
+<section id="screen-chat" class="screen theme-chat">
+    <div class="watermark">
+        <img src="/static/logo.png" alt="">
+    </div>
 
-    function profile() {
-        tg.showAlert(
-            "👤 Профиль пока находится в разработке."
-        );
-    }
+    <header class="chat-head">
+        <div class="avatar-sm" id="chat-avatar"></div>
+        <div class="chat-peer">
+            <div class="chat-peer-name">Собеседник</div>
+            <div class="chat-peer-status" id="peer-status">Онлайн</div>
+        </div>
+        <button class="chat-menu-btn" onclick="toggleChatMenu()">⋮</button>
+        <div class="chat-menu" id="chat-menu" style="display:none">
+            <button class="chat-menu-item" onclick="openReport()">⚠️ Пожаловаться</button>
+            <button class="chat-menu-item danger" onclick="blockPeer()">🚫 Заблокировать</button>
+            <button class="chat-menu-item" onclick="leaveChat()">✋ Прекратить разговор</button>
+        </div>
+    </header>
 
-    function settings() {
-        tg.showAlert(
-            "⚙️ Настройки пока находятся в разработке."
-        );
-    }
+    <div class="chat-body" id="chat-body">
+        <div class="day-pill" id="day-pill">Сегодня</div>
+    </div>
 
-    function rules() {
-        tg.showAlert(
-            "📋 Правила:\n\n" +
-            "1. Уважай собеседника.\n" +
-            "2. Не публикуй личные данные.\n" +
-            "3. Не угрожай другим пользователям.\n" +
-            "4. Не отправляй запрещённый контент.\n\n" +
-            "Возраст: 14+."
-        );
-    }
+    <div class="typing" id="typing" style="visibility:hidden">Собеседник печатает....</div>
 
-    function about() {
-        tg.showAlert(
-            "ℹ️ «Между людьми» — анонимное приложение " +
-            "для общения один-на-один."
-        );
-    }
+    <footer class="chat-input-bar">
+        <button class="icon-btn" title="скрепка">📎</button>
+        <input id="msg-input" type="text" maxlength="1000"
+               placeholder="Написать сообщение....." autocomplete="off">
+        <button class="icon-btn" onclick="voiceSoon()" title="голосовое">🎤</button>
+        <button class="send-btn" id="send-btn" onclick="sendMsg()">➤</button>
+    </footer>
+</section>
 
-</script>
+<!-- ЧАТ ЗАВЕРШЁН -->
+<section id="screen-ended" class="screen theme-light">
+    <div class="scroll center">
+        <div class="ended-title">Чат завершен</div>
+        <img src="/static/logo.png" alt="между людьми" class="logo logo-ended">
+        <div class="avatar-big dim"></div>
+        <button class="btn btn-dark btn-wide" onclick="startSearch()">Найти собеседника</button>
+    </div>
+</section>
 
+<!-- ПРОФИЛЬ -->
+<section id="screen-profile" class="screen theme-dark">
+    <div class="scroll">
+        <header class="sub-head">
+            <button class="back-btn" onclick="show('home')">‹</button>
+            <h2>Профиль</h2>
+        </header>
+        <div class="profile-box">
+            <div class="avatar-big clickable" id="profile-avatar" onclick="pickAvatar()"></div>
+            <div class="profile-name" id="profile-name">Аноним #—</div>
+            <div class="profile-hint">Твой номер видят собеседники. Ник и имя — никогда.</div>
+            <button class="btn btn-dark btn-small" onclick="pickAvatar()">🖼 Сменить аватарку</button>
+            <input type="file" id="avatar-file" accept="image/*" style="display:none">
+        </div>
+    </div>
+</section>
+
+<!-- НАСТРОЙКИ -->
+<section id="screen-settings" class="screen theme-dark">
+    <div class="scroll">
+        <header class="sub-head">
+            <button class="back-btn" onclick="show('home')">‹</button>
+            <h2>Настройки</h2>
+        </header>
+        <div class="menu">
+            <label class="row-toggle">
+                <span>🔔 Уведомления в Telegram</span>
+                <input type="checkbox" id="tg-notif" checked>
+            </label>
+            <button class="btn btn-soft" onclick="clearLocal()">🧹 Очистить локальную историю</button>
+        </div>
+    </div>
+</section>
+
+<!-- ПРАВИЛА -->
+<section id="screen-rules" class="screen theme-dark">
+    <div class="scroll">
+        <header class="sub-head">
+            <button class="back-btn" onclick="show('home')">‹</button>
+            <h2>Правила</h2>
+        </header>
+        <div class="text-box">
+            <p>1. Уважай собеседника.</p>
+            <p>2. Не публикуй личные данные — свои и чужие.</p>
+            <p>3. Не угрожай и не оскорбляй других.</p>
+            <p>4. Не отправляй запрещённый контент.</p>
+            <p>5. Жалобы разбирает живой модератор — вручную и честно.</p>
+            <p class="muted">Возраст: 14+</p>
+        </div>
+    </div>
+</section>
+
+<!-- О НАС -->
+<section id="screen-about" class="screen theme-dark">
+    <div class="scroll">
+        <header class="sub-head">
+            <button class="back-btn" onclick="show('home')">‹</button>
+            <h2>О нас</h2>
+        </header>
+        <div class="text-box">
+            <p>«Между людьми» — анонимное приложение для общения один-на-один.</p>
+            <p>Без имён, без ников, без профилей — только ты, собеседник и возможность
+               высказаться.</p>
+            <p>Здесь можно выговориться, получить поддержку и просто поговорить
+               с человеком, который не знает, кто ты.</p>
+            <p class="muted">Мы за свободное и уважительное общение. 🤍</p>
+        </div>
+    </div>
+</section>
+
+<!-- ЖАЛОБА -->
+<section id="screen-report" class="screen theme-light">
+    <div class="scroll">
+        <header class="sub-head light">
+            <button class="back-btn" onclick="closeReport()">‹</button>
+            <h2>Жалоба</h2>
+        </header>
+        <div class="card card-light">
+            <div class="field-label">Что случилось?</div>
+            <div class="chips" id="report-chips">
+                <button class="chip" data-r="Оскорбления">Оскорбления</button>
+                <button class="chip" data-r="Угрозы">Угрозы</button>
+                <button class="chip" data-r="Спам">Спам</button>
+                <button class="chip" data-r="Запрещённый контент">Контент</button>
+                <button class="chip" data-r="Другое">Другое</button>
+            </div>
+            <div class="field-label">Опиши ситуацию</div>
+            <textarea id="report-reason" rows="3" maxlength="500"
+                      placeholder="Что произошло..."></textarea>
+            <div class="field-label">Доказательства (последние сообщения)</div>
+            <textarea id="report-evidence" rows="4" maxlength="4000"
+                      placeholder="Текст сообщений..."></textarea>
+            <button class="btn btn-dark" onclick="sendReport()">📨 Отправить жалобу</button>
+            <div class="muted small">Жалобу увидит живой модератор.</div>
+        </div>
+    </div>
+</section>
+
+<!-- АДМИНКА -->
+<section id="screen-admin" class="screen theme-dark">
+    <div class="scroll">
+        <header class="sub-head">
+            <button class="back-btn" onclick="show('home')">‹</button>
+            <h2>Админка</h2>
+        </header>
+        <div class="admin-tabs">
+            <button class="tab active" id="tab-reports" onclick="adminTab('reports')">Жалобы</button>
+            <button class="tab" id="tab-banned" onclick="adminTab('banned')">Баны</button>
+        </div>
+        <div id="admin-list" class="menu"></div>
+    </div>
+</section>
+
+<div id="toast" class="toast" style="display:none"></div>
+
+<script src="/static/app.js"></script>
 </body>
 </html>

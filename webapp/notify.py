@@ -25,8 +25,11 @@ def set_bot(bot):
 
 
 def push(tg_id: int, text: str, force: bool = True):
-    """Поставить уведомление в очередь."""
+    """Поставить уведомление в очередь (если пользователь не отключил их)."""
     try:
+        u = DB.one("SELECT notify FROM users WHERE tg_id = ?", (int(tg_id),))
+        if u is not None and not u.get("notify", 1):
+            return
         DB.execute(
             "INSERT INTO notifications (tg_id, text, force, created_at) "
             "VALUES (?, ?, ?, ?)",

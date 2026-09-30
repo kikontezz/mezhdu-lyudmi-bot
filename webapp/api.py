@@ -29,7 +29,15 @@ ADMIN_IDS = {
 MAX_TEXT = 1000
 MAX_AVATAR = 300_000  # base64-строка, байт не более ~220KB
 
+# Режим локальной разработки: принимаем initData вида "dev:<tg_id>" без подписи.
+# На проде НЕ задавать (BOT_TOKEN окружения на Render без DEV_FAKE_AUTH).
+DEV_FAKE = os.getenv("DEV_FAKE_AUTH") == "1"
+
 _match_lock = threading.Lock()
+
+# «печатает...»: (chat_id, tg_id) -> время последнего нажатия
+_typing_times: dict = {}
+TYPING_TTL = 4  # секунд
 
 
 # --------------------------------------------------------------------------
@@ -46,6 +54,7 @@ def _public_user(u: dict) -> dict:
         "anon_num": u["anon_num"],
         "avatar": u.get("avatar"),
         "banned": bool(u.get("banned")),
+        "notify": bool(u.get("notify", 1)),
         "is_admin": _is_admin(u["tg_id"]),
     }
 
@@ -77,6 +86,11 @@ def _auth() -> int | None:
     init_data = request.headers.get("X-Telegram-Init-Data", "")
     if not init_data:
         init_data = (request.get_json(silent=True) or {}).get("init_data", "")
+    if DEV_FAKE and init_data.startswith("dev:"):
+        try:
+            return int(init_data[4:])
+        except ValueError:
+            return None
     user = validate_init_data(init_data, BOT_TOKEN)
     if not user:
         return None
@@ -104,7 +118,11 @@ def _err(message: str, code: int = 400):
 @api.post("/auth")
 def auth():
     init_data = (request.get_json(silent=True) or {}).get("init_data", "")
-    tg_user = validate_init_data(init_data, BOT_TOKEN)
+    if DEV_FAKE and init_data.startswith("dev:"):
+        tg_id = int(init_data[4:])
+        tg_user = {"id": tg_id, "first_name": "Dev"}
+    else:
+        tg_user = validate_init_data(init_data, BOT_TOKEN)
     if not tg_user:
         return _err("Неверные данные входа", 401)
 
@@ -155,6 +173,9 @@ def update_profile():
     if avatar is not None:
         fields.append("avatar = ?")
         values.append(avatar)
+    if "notify" in data:
+        fields.append("notify = ?")
+        values.append(1 if data["notify"] else 0)
     if not fields:
         return _err("Нечего менять")
     values.append(tg_id)
@@ -181,13 +202,16 @@ def join_queue():
             return jsonify({"status": "chat", "chat_id": chat["id"],
                             "peer": _peer_info(peer)})
 
-        # ищем кого-то из очереди
+        # ищем кого-то из очереди (исключая заблокированных в обе стороны)
         waiting = DB.one(
             "SELECT tq.tg_id FROM queue tq "
             "JOIN users u ON u.tg_id = tq.tg_id "
+            "LEFT JOIN blocks b1 ON b1.blocker_id = ? AND b1.blocked_id = tq.tg_id "
+            "LEFT JOIN blocks b2 ON b2.blocker_id = tq.tg_id AND b2.blocked_id = ? "
             "WHERE tq.tg_id != ? AND u.banned = 0 "
+            "  AND b1.blocked_id IS NULL AND b2.blocked_id IS NULL "
             "ORDER BY tq.joined_at LIMIT 1",
-            (tg_id,),
+            (tg_id, tg_id, tg_id),
         )
         if waiting:
             peer_id = waiting["tg_id"]
@@ -288,9 +312,13 @@ def _poll_state(tg_id: int, since_msg: int, since_note: int) -> dict:
             (chat["id"], since_msg),
         )
         status = "chat"
+        peer_tg = _peer_id(chat, tg_id)
+        last_type = _typing_times.get((chat["id"], peer_tg), 0)
+        peer_typing = (time.time() - last_type) < TYPING_TTL
     else:
         peer = None
         messages = []
+        peer_typing = False
         if queued:
             status = "queued"
         else:
@@ -306,10 +334,62 @@ def _poll_state(tg_id: int, since_msg: int, since_note: int) -> dict:
         "status": status,
         "chat_id": chat["id"] if chat else None,
         "peer": peer,
+        "peer_typing": peer_typing,
         "messages": messages,
         "notifications": [{"id": n["id"], "text": n["text"]} for n in notes],
         "events": events,
     }
+
+
+@api.post("/typing")
+def typing():
+    """Клиент сообщает, что пользователь набирает текст."""
+    tg_id, user = _require()
+    if user is None:
+        return _err("Не авторизован", 401)
+    chat = _active_chat(tg_id)
+    if not chat:
+        return jsonify({"ok": True})
+    _typing_times[(chat["id"], tg_id)] = time.time()
+    # подчистить старое
+    now_ts = time.time()
+    for key in list(_typing_times):
+        if now_ts - _typing_times[key] > TYPING_TTL * 10:
+            _typing_times.pop(key, None)
+    return jsonify({"ok": True})
+
+
+@api.post("/block")
+def block():
+    """Заблокировать собеседника: закрыть чат и не матчить больше никогда."""
+    tg_id, user = _require()
+    if user is None:
+        return _err("Не авторизован", 401)
+
+    data = request.get_json(silent=True) or {}
+    target = data.get("tg_id")
+
+    chat = _active_chat(tg_id)
+    if chat and not target:
+        target = _peer_id(chat, tg_id)
+    if not target:
+        return _err("Некого блокировать", 409)
+    target = int(target)
+    if target == tg_id:
+        return _err("Нельзя заблокировать себя")
+
+    try:
+        DB.execute(
+            "INSERT INTO blocks (blocker_id, blocked_id, created_at) VALUES (?, ?, ?)",
+            (tg_id, target, now()),
+        )
+    except Exception:
+        pass  # уже заблокирован
+
+    if chat:
+        close_chat(chat["id"])
+        notify.push(target, "🚫 Тебя заблокировал собеседник.")
+    return jsonify({"ok": True})
 
 
 @api.post("/message")
@@ -430,6 +510,18 @@ def admin_unban(target_id):
     unban_user(target_id)
     notify.push(target_id, "✅ Ты снова можешь пользоваться приложением.")
     return jsonify({"ok": True})
+
+
+@api.get("/admin/banned")
+def admin_banned():
+    _, err = _admin_required()
+    if err:
+        return err
+    rows = DB.all(
+        "SELECT tg_id, anon_num, banned_reason FROM users "
+        "WHERE banned = 1 ORDER BY tg_id"
+    )
+    return jsonify(rows)
 
 
 @api.get("/admin/stats")

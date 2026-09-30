@@ -18,6 +18,7 @@ CREATE TABLE IF NOT EXISTS users (
     avatar         TEXT,
     banned         INTEGER DEFAULT 0,
     banned_reason  TEXT,
+    notify         INTEGER DEFAULT 1,
     last_seen_at   INTEGER,
     created_at     INTEGER
 );
@@ -54,6 +55,13 @@ CREATE TABLE IF NOT EXISTS reports (
     evidence    TEXT,
     status      TEXT DEFAULT 'new',
     created_at  INTEGER
+);
+
+CREATE TABLE IF NOT EXISTS blocks (
+    blocker_id BIGINT,
+    blocked_id BIGINT,
+    created_at INTEGER,
+    PRIMARY KEY (blocker_id, blocked_id)
 );
 
 CREATE TABLE IF NOT EXISTS notifications (
@@ -108,6 +116,7 @@ def _migrate(cur, conn):
     """Лёгкие миграции: добавляем колонки, если таблицы уже существуют."""
     migrations = [
         "ALTER TABLE users ADD COLUMN last_seen_at INTEGER",
+        "ALTER TABLE users ADD COLUMN notify INTEGER DEFAULT 1",
         "ALTER TABLE notifications ADD COLUMN force INTEGER DEFAULT 1",
         "ALTER TABLE notifications ADD COLUMN sent INTEGER DEFAULT 0",
         "ALTER TABLE users ADD COLUMN banned_reason TEXT",

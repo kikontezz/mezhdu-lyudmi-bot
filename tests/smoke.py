@@ -171,6 +171,34 @@ check("аватарка сохранена", r.status_code == 200)
 r = client.post("/api/profile", headers=h(111), json={"avatar": "http://evil"})
 check("аватарка не-dataURL отклонена", r.status_code == 400)
 
+# --- typing + блокировки ---
+client.post("/api/cancel", headers=h(222))  # выйти из прошлой очереди
+r = client.post("/api/queue", headers=h(111))
+check("111 снова ищет", r.get_json()["status"] == "queued")
+r = client.post("/api/queue", headers=h(222))
+check("222 матчится с 111", r.get_json()["status"] == "chat", str(r.get_json()))
+
+r = client.post("/api/typing", headers=h(222))
+check("typing принят", r.status_code == 200)
+r = client.get("/api/poll?timeout=0", headers=h(111))
+check("peer_typing виден", r.get_json().get("peer_typing") is True, str(r.get_json().get("peer_typing")))
+
+# 111 блокирует 222
+r = client.post("/api/block", headers=h(111), json={"tg_id": 222})
+check("block", r.status_code == 200, str(r.get_json()))
+
+# теперь они не должны больше матчиться
+r = client.post("/api/queue", headers=h(111))
+s1 = r.get_json()["status"]
+r = client.post("/api/queue", headers=h(222))
+s2 = r.get_json()["status"]
+check("после блока не матчатся", s1 == "queued" and s2 == "queued", f"{s1}/{s2}")
+
+# админ видит список банов
+r = client.get("/api/admin/banned", headers=h(999))
+check("список банов", r.status_code == 200 and isinstance(r.get_json(), list),
+      str(r.get_json()))
+
 print()
 if fails:
     print(f"ПРОВАЛЕНО: {len(fails)} → {fails}")
