@@ -31,6 +31,7 @@
             </div>
             <button class="btn btn-soft" onclick="show('rules')">📋 Правила</button>
             <button class="btn btn-soft" onclick="show('about')">ℹ️ О нас</button>
+            <button class="btn btn-soft" onclick="openDiscord()">🎮 Наш Discord</button>
             <button class="btn btn-soft admin-only" onclick="show('admin')" style="display:none">
                 🛡 Админка
             </button>
@@ -105,11 +106,12 @@
     <div class="typing" id="typing" style="visibility:hidden">Собеседник печатает....</div>
 
     <footer class="chat-input-bar">
-        <button class="icon-btn" title="скрепка">📎</button>
+        <button class="icon-btn" id="attach-btn" onclick="pickPhoto()" title="фото">📎</button>
         <input id="msg-input" type="text" maxlength="1000"
                placeholder="Написать сообщение....." autocomplete="off">
         <button class="icon-btn" id="mic-btn" onclick="toggleVoice()" title="голосовое">🎤</button>
         <button class="send-btn" id="send-btn" onclick="sendMsg()">➤</button>
+        <input type="file" id="photo-file" accept="image/*" style="display:none">
     </footer>
 </section>
 

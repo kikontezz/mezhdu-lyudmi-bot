@@ -51,6 +51,14 @@ function haptic(kind) {
     try { tg.HapticFeedback && tg.HapticFeedback.notificationOccurred(kind); } catch (e) {}
 }
 
+/* Ссылка на Discord-сервер проекта */
+const DISCORD_URL = 'https://discord.gg/5TZCd3D9z2';
+
+function openDiscord() {
+    if (!DISCORD_URL) { toast('Ссылка на Discord скоро появится'); return; }
+    try { tg.openLink(DISCORD_URL); } catch (e) { window.open(DISCORD_URL, '_blank'); }
+}
+
 /* ---------- Навигация ---------- */
 
 function show(name) {
@@ -184,6 +192,13 @@ function addMsg(m) {
 
     if (m.type === 'voice') {
         div.appendChild(buildPlayer(m));
+    } else if (m.type === 'photo') {
+        div.classList.add('photo');
+        const img = document.createElement('img');
+        img.loading = 'lazy';
+        img.src = '/api/photo/' + m.id + '?init_data=' + encodeURIComponent(INIT_DATA);
+        img.onclick = () => window.open(img.src, '_blank');
+        div.appendChild(img);
     } else {
         const text = document.createElement('span');
         text.textContent = m.text;
@@ -367,6 +382,55 @@ function blobToDataURL(blob) {
         fr.onload = () => res(fr.result);
         fr.onerror = rej;
         fr.readAsDataURL(blob);
+    });
+}
+
+/* ---------- Фото в чат ---------- */
+
+function pickPhoto() {
+    document.getElementById('photo-file').click();
+}
+
+function resizePhoto(file, cb) {
+    const img = new Image();
+    img.onload = () => {
+        const max = 1280;
+        let { width: w, height: h } = img;
+        if (w > max || h > max) {
+            const k = Math.min(max / w, max / h);
+            w = Math.round(w * k);
+            h = Math.round(h * k);
+        }
+        const c = document.createElement('canvas');
+        c.width = w; c.height = h;
+        c.getContext('2d').drawImage(img, 0, 0, w, h);
+        cb(c.toDataURL('image/jpeg', 0.85));
+    };
+    img.onerror = () => toast('⚠️ Не удалось открыть изображение');
+    img.src = URL.createObjectURL(file);
+}
+
+async function onPhotoFile(ev) {
+    const file = ev.target.files[0];
+    ev.target.value = '';
+    if (!file) return;
+    if (!file.type.startsWith('image/')) { toast('Нужен файл-изображение'); return; }
+    resizePhoto(file, async (dataUrl) => {
+        if (dataUrl.length > 2_200_000) { toast('⚠️ Фото слишком тяжёлое'); return; }
+        const btn = document.getElementById('attach-btn');
+        btn.classList.add('rec');
+        try {
+            const r = await api('/photo', { image: dataUrl });
+            addMsg({
+                id: r.id, sender_id: S.me.tg_id, type: 'photo',
+                created_at: Date.now() / 1000,
+            });
+            haptic('success');
+        } catch (e) {
+            toast('⚠️ ' + e.message);
+        } finally {
+            btn.classList.remove('rec');
+        }
     });
 }
 
@@ -646,6 +710,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
     document.getElementById('msg-input').addEventListener('input', onType);
     document.getElementById('avatar-file').addEventListener('change', onAvatarFile);
+    document.getElementById('photo-file').addEventListener('change', onPhotoFile);
 
     document.querySelectorAll('#report-chips .chip').forEach(chip => {
         chip.addEventListener('click', () => {

@@ -237,6 +237,32 @@ check("poll отдаёт тип voice",
       p["messages"] and p["messages"][0].get("type") == "voice",
       str(p["messages"][:1]))
 
+# poll видит фото как type=photo
+fake_img = "data:image/jpeg;base64," + "B" * 800
+r = client.post("/api/photo", headers=h(444), json={"image": fake_img})
+check("фото принято", r.status_code == 200, str(r.get_json()))
+pid = r.get_json()["id"]
+
+r = client.get(f"/api/photo/{pid}?init_data={quote(make_init_data(333))}")
+check("пара видит фото", r.status_code == 200 and r.mimetype.startswith("image/"),
+      r.mimetype)
+
+r = client.get(f"/api/photo/{pid}?init_data={quote(make_init_data(111))}")
+check("чужой не видит фото (403)", r.status_code == 403)
+
+r = client.post("/api/photo", headers=h(333), json={"image": "data:text/html;base64,AAA"})
+check("не-картинка = 400", r.status_code == 400)
+
+r = client.get(f"/api/poll?since_msg={pid - 1}&timeout=0", headers=h(333))
+p = r.get_json()
+check("poll отдаёт тип photo",
+      p["messages"] and p["messages"][-1].get("type") == "photo",
+      str(p["messages"][-1:]))
+
+# discord-бот импортируется без токена (не должен падать)
+import webapp.discord_bot  # noqa: E402,F401
+check("discord_bot импортируется", True)
+
 print()
 if fails:
     print(f"ПРОВАЛЕНО: {len(fails)} → {fails}")

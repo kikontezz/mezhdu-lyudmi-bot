@@ -462,8 +462,8 @@ def send_voice():
     return jsonify({"id": cur.lastrowid, "chat_id": chat["id"]})
 
 
-def _check_voice_access(msg_id: int) -> int | None:
-    """Проверяет, что tg_id имеет доступ к голосовому. Возвращает tg_id или None."""
+def _check_media_access(msg_id: int) -> int | None:
+    """Проверяет, что tg_id — участник чата с этим сообщением. Возвращает tg_id или None."""
     init_data = request.args.get("init_data") or request.headers.get(
         "X-Telegram-Init-Data", "")
     if DEV_FAKE and init_data.startswith("dev:"):
@@ -477,8 +477,7 @@ def _check_voice_access(msg_id: int) -> int | None:
             return None
         tg_id = int(u["id"])
 
-    m = DB.one("SELECT chat_id FROM messages WHERE id = ? AND type = 'voice'",
-               (int(msg_id),))
+    m = DB.one("SELECT chat_id FROM messages WHERE id = ?", (int(msg_id),))
     if not m:
         return None
     chat = DB.one("SELECT user_a, user_b FROM chats WHERE id = ?", (m["chat_id"],))
@@ -487,20 +486,63 @@ def _check_voice_access(msg_id: int) -> int | None:
     return tg_id
 
 
+def _media_response(data_field: str, msg_id: int, expect_type: str):
+    if _check_media_access(msg_id) is None:
+        return _err("Нет доступа", 403)
+    m = DB.one(
+        f"SELECT {data_field} AS d FROM messages WHERE id = ? AND type = ?",
+        (int(msg_id), expect_type),
+    )
+    if not m or not m.get("d"):
+        return _err("Не найдено", 404)
+    header, b64 = m["d"].split(";base64,", 1)
+    mime = header.replace("data:", "") or "application/octet-stream"
+    return Response(base64.b64decode(b64), mimetype=mime)
+
+
 @api.get("/voice/<int:msg_id>")
 def get_voice(msg_id):
     """Отдаёт аудио участнику чата (для <audio src>)."""
-    if _check_voice_access(msg_id) is None:
-        return _err("Нет доступа", 403)
-    m = DB.one(
-        "SELECT voice_data FROM messages WHERE id = ? AND type = 'voice'",
-        (int(msg_id),),
+    return _media_response("voice_data", msg_id, "voice")
+
+
+MAX_PHOTO = 2_200_000  # ~1.6MB бинарно (после клиентского сжатия обычно < 400KB)
+
+
+@api.post("/photo")
+def send_photo():
+    """Фото в чат: dataURL (base64) в БД, клиент сжимает до 1280px."""
+    tg_id, user = _require()
+    if user is None:
+        return _err("Не авторизован", 401)
+    if user["banned"]:
+        return _err("Аккаунт заблокирован", 403)
+
+    data = request.get_json(silent=True) or {}
+    image = data.get("image") or ""
+    if not image.startswith("data:image/") or ";base64," not in image:
+        return _err("Неверный формат изображения")
+    if len(image) > MAX_PHOTO:
+        return _err("Изображение слишком большое (макс. 1.5 МБ)")
+
+    chat = _active_chat(tg_id)
+    if not chat:
+        return _err("Нет активного чата", 409)
+
+    cur = DB.execute(
+        "INSERT INTO messages (chat_id, sender_id, text, type, photo_data, created_at) "
+        "VALUES (?, ?, '', 'photo', ?, ?)",
+        (chat["id"], tg_id, image, now()),
     )
-    if not m or not m.get("voice_data"):
-        return _err("Не найдено", 404)
-    header, b64 = m["voice_data"].split(";base64,", 1)
-    mime = header.replace("data:", "") or "audio/webm"
-    return Response(base64.b64decode(b64), mimetype=mime)
+    peer_id = _peer_id(chat, tg_id)
+    notify.push(peer_id, "🖼 Фото", force=False)
+    return jsonify({"id": cur.lastrowid, "chat_id": chat["id"]})
+
+
+@api.get("/photo/<int:msg_id>")
+def get_photo(msg_id):
+    """Отдаёт фото участнику чата (для <img src>)."""
+    return _media_response("photo_data", msg_id, "photo")
 
 
 # --------------------------------------------------------------------------

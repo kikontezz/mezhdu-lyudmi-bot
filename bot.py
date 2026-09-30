@@ -10,6 +10,7 @@ from telegram.ext import Application, CommandHandler, ContextTypes
 from webapp import notify
 from webapp.api import api
 from webapp.db import init_db
+from webapp.discord_bot import start as start_discord_bot
 
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
@@ -82,6 +83,9 @@ def main():
 
     notify.set_bot(application.bot)
     notify.start_worker()
+
+    # Discord-бот для жалоб (если задан DISCORD_BOT_TOKEN)
+    start_discord_bot()
 
     print("Бот запускается...")
 

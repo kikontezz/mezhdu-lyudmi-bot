@@ -45,6 +45,7 @@ CREATE TABLE IF NOT EXISTS messages (
     type       TEXT DEFAULT 'text',
     voice_data TEXT,
     voice_dur  REAL,
+    photo_data TEXT,
     created_at INTEGER,
     reported   INTEGER DEFAULT 0
 );
@@ -126,6 +127,7 @@ def _migrate(cur, conn):
         "ALTER TABLE messages ADD COLUMN type TEXT DEFAULT 'text'",
         "ALTER TABLE messages ADD COLUMN voice_data TEXT",
         "ALTER TABLE messages ADD COLUMN voice_dur REAL",
+        "ALTER TABLE messages ADD COLUMN photo_data TEXT",
     ]
     for stmt in migrations:
         try:

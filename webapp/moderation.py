@@ -14,6 +14,15 @@ DISCORD_MENTION = os.getenv("DISCORD_MENTION", "")  # напр. <@123456789>
 
 RED = 0xE74C3C
 
+# Отправка жалоб через Discord-бота (с кнопками). Если бот не запущен — webhook.
+_discord_sender = None
+
+
+def set_discord_sender(fn):
+    """fn(payload: dict) — вызывается из другого потока при новой жалобе."""
+    global _discord_sender
+    _discord_sender = fn
+
 
 def _post_webhook(payload: dict) -> bool:
     if not DISCORD_WEBHOOK_URL:
@@ -60,9 +69,26 @@ def create_report(reporter_id: int, accused_id: int, chat_id: int,
             {"name": "Доказательства", "value": (evidence or "—")[:1000], "inline": False},
             {"name": "Чат", "value": f"#{chat_id}", "inline": True},
         ],
-        "footer": {"text": "Разбор — в админ-панели Mini App"},
+        "footer": {"text": "Разбор кнопками ниже или в админ-панели Mini App"},
     }
-    _post_webhook({"content": content, "embeds": [embed]})
+    payload = {"content": content, "embeds": [embed]}
+
+    if _discord_sender is not None:
+        try:
+            _discord_sender({
+                "report_id": report_id,
+                "accused_tg": int(accused_id),
+                "accused_label": accused_label,
+                "reporter_label": reporter_label,
+                "reason": reason or "не указана",
+                "evidence": (evidence or "—")[:1000],
+                "chat_id": chat_id,
+                "mention": DISCORD_MENTION,
+            })
+        except Exception:
+            logger.exception("Ошибка отправки жалобы через Discord-бота")
+    else:
+        _post_webhook(payload)
     return report_id
 
 

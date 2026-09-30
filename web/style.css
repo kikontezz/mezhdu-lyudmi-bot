@@ -220,6 +220,19 @@ html, body {
 }
 .voice-wave i.on { opacity: 1; }
 .voice-time { font-size: 11.5px; opacity: .7; flex: 0 0 auto; }
+
+/* фото в чате */
+.msg.photo { padding: 5px 5px 4px; background: transparent !important; }
+.msg.photo img {
+    display: block; max-width: 230px; max-height: 300px;
+    border-radius: 16px; cursor: pointer;
+    box-shadow: 0 4px 14px rgba(0,0,0,.18);
+}
+.msg.photo .msg-time {
+    position: relative; margin-top: -18px; padding: 0 6px;
+    color: #fff; text-shadow: 0 1px 3px rgba(0,0,0,.7);
+    z-index: 2;
+}
 .send-btn {
     border: 0; width: 46px; height: 46px; border-radius: 50%;
     background: #33481f; color: var(--green);
