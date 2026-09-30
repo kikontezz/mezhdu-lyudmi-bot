@@ -1,32 +1,33 @@
-import os
 import logging
+import os
 from threading import Thread
 
 from flask import Flask, send_from_directory
 
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, WebAppInfo
-from telegram.ext import (
-    Application,
-    CommandHandler,
-    ContextTypes,
-)
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update, WebAppInfo
+from telegram.ext import Application, CommandHandler, ContextTypes
 
+from webapp import notify
+from webapp.api import api
+from webapp.db import init_db
 
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     level=logging.INFO,
 )
+logger = logging.getLogger(__name__)
 
 TOKEN = os.getenv("BOT_TOKEN")
 PORT = int(os.getenv("PORT", "10000"))
 
-# URL твоего Render-сервиса
+# URL твоего Render-сервиса (для кнопки Mini App)
 WEB_APP_URL = os.getenv(
     "WEB_APP_URL",
     "https://mezhdu-lyudmi-bot.onrender.com",
 )
 
-app = Flask(__name__)
+app = Flask(__name__, static_folder="web", static_url_path="/static")
+app.register_blueprint(api)
 
 
 @app.route("/")
@@ -51,7 +52,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     await update.message.reply_text(
         "👋 Добро пожаловать в «Между людьми»!\n\n"
-        "Это анонимное приложение для общения один-на-один.\n\n"
+        "Это анонимное общение один-на-один: "
+        "без имён, без ников — только ты, собеседник и аватарка.\n\n"
         "Нажми кнопку ниже, чтобы открыть приложение.",
         reply_markup=InlineKeyboardMarkup(keyboard),
     )
@@ -62,6 +64,7 @@ def run_web_server():
         host="0.0.0.0",
         port=PORT,
         use_reloader=False,
+        threaded=True,
     )
 
 
@@ -69,16 +72,16 @@ def main():
     if not TOKEN:
         raise RuntimeError("Не найден BOT_TOKEN")
 
-    Thread(
-        target=run_web_server,
-        daemon=True,
-    ).start()
+    init_db()
+    logger.info("База данных готова")
+
+    Thread(target=run_web_server, daemon=True).start()
 
     application = Application.builder().token(TOKEN).build()
+    application.add_handler(CommandHandler("start", start))
 
-    application.add_handler(
-        CommandHandler("start", start)
-    )
+    notify.set_bot(application.bot)
+    notify.start_worker()
 
     print("Бот запускается...")
 
