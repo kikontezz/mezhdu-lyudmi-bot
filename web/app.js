@@ -169,7 +169,14 @@ function nowHM(ts) {
            d.getMinutes().toString().padStart(2, '0');
 }
 
+// id уже отрисованных сообщений — защита от дублей (оптимистичная отрисовка + poll)
+const renderedIds = new Set();
+
 function addMsg(m) {
+    if (m.id) {
+        if (renderedIds.has(m.id)) return;
+        renderedIds.add(m.id);
+    }
     const body = document.getElementById('chat-body');
     const mine = S.me && m.sender_id === S.me.tg_id;
     const div = document.createElement('div');
