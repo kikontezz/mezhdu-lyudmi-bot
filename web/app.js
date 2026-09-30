@@ -181,15 +181,81 @@ function addMsg(m) {
     const mine = S.me && m.sender_id === S.me.tg_id;
     const div = document.createElement('div');
     div.className = 'msg ' + (mine ? 'out' : 'in');
-    const text = document.createElement('span');
-    text.textContent = m.text;
+
+    if (m.type === 'voice') {
+        div.appendChild(buildPlayer(m));
+    } else {
+        const text = document.createElement('span');
+        text.textContent = m.text;
+        div.appendChild(text);
+    }
+
     const time = document.createElement('span');
     time.className = 'msg-time';
     time.textContent = nowHM(m.created_at);
-    div.appendChild(text);
     div.appendChild(time);
     body.appendChild(div);
     body.scrollTop = body.scrollHeight;
+}
+
+function fmtDur(sec) {
+    sec = Math.max(0, Math.round(sec || 0));
+    return Math.floor(sec / 60) + ':' + String(sec % 60).padStart(2, '0');
+}
+
+function buildPlayer(m) {
+    const wrap = document.createElement('div');
+    wrap.className = 'voice';
+
+    const audio = document.createElement('audio');
+    audio.preload = 'metadata';
+    audio.src = '/api/voice/' + m.id + '?init_data=' + encodeURIComponent(INIT_DATA);
+
+    const btn = document.createElement('button');
+    btn.className = 'voice-play';
+    btn.textContent = '▶';
+
+    const wave = document.createElement('div');
+    wave.className = 'voice-wave';
+    const bars = [];
+    const total = 24;
+    for (let i = 0; i < total; i++) {
+        const b = document.createElement('i');
+        b.style.height = (28 + ((m.id * (i + 5) * 41 + i * 17) % 70)) + '%';
+        wave.appendChild(b);
+        bars.push(b);
+    }
+
+    const time = document.createElement('span');
+    time.className = 'voice-time';
+    time.textContent = fmtDur(m.voice_dur);
+
+    btn.onclick = () => {
+        if (audio.paused) {
+            document.querySelectorAll('.voice audio').forEach(a => {
+                if (a !== audio) a.pause();
+            });
+            audio.play().catch(() => toast('⚠️ Не удалось воспроизвести'));
+        } else {
+            audio.pause();
+        }
+    };
+    audio.onplay = () => { btn.textContent = '⏸'; };
+    audio.onpause = () => { btn.textContent = '▶'; };
+    audio.onended = () => {
+        btn.textContent = '▶';
+        bars.forEach(b => b.classList.remove('on'));
+    };
+    audio.ontimeupdate = () => {
+        const p = audio.duration ? audio.currentTime / audio.duration : 0;
+        bars.forEach((b, i) => b.classList.toggle('on', i / total < p));
+    };
+
+    wrap.appendChild(btn);
+    wrap.appendChild(wave);
+    wrap.appendChild(time);
+    wrap.appendChild(audio);
+    return wrap;
 }
 
 async function sendMsg() {
@@ -215,8 +281,93 @@ function onType() {
     }, 1200);
 }
 
-function voiceSoon() {
-    toast('🎙 Голосовые сообщения появятся в следующем обновлении');
+/* ---------- Голосовые сообщения ---------- */
+
+const voice = { active: false, mr: null, chunks: [], stream: null, start: 0, timer: null, tick: null };
+
+async function toggleVoice() {
+    if (voice.active) { stopRecording(); return; }
+    if (!navigator.mediaDevices || !window.MediaRecorder) {
+        toast('🎙 Голосовая запись не поддерживается на этом устройстве');
+        return;
+    }
+    try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        const types = ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4'];
+        const mime = types.find(t => MediaRecorder.isTypeSupported(t));
+        const mr = new MediaRecorder(stream, mime ? { mimeType: mime } : undefined);
+
+        voice.active = true;
+        voice.mr = mr;
+        voice.chunks = [];
+        voice.stream = stream;
+        voice.start = Date.now();
+        mr.ondataavailable = e => { if (e.data && e.data.size) voice.chunks.push(e.data); };
+        mr.onstop = onRecorded;
+        mr.start();
+        voice.timer = setTimeout(stopRecording, 60000); // максимум 60 сек
+        recUI(true);
+    } catch (e) {
+        toast('⚠️ Нет доступа к микрофону');
+    }
+}
+
+function stopRecording() {
+    if (!voice.active) return;
+    clearTimeout(voice.timer);
+    try { voice.mr.stop(); } catch (e) {}
+    try { voice.stream.getTracks().forEach(t => t.stop()); } catch (e) {}
+}
+
+async function onRecorded() {
+    const dur = (Date.now() - voice.start) / 1000;
+    const blob = new Blob(voice.chunks, { type: voice.mr.mimeType || 'audio/webm' });
+    voice.active = false;
+    voice.chunks = [];
+    voice.stream = null;
+    recUI(false);
+
+    if (dur < 1) { toast('Запись слишком короткая'); return; }
+
+    try {
+        const dataUrl = await blobToDataURL(blob);
+        const r = await api('/voice', { audio: dataUrl, dur: Math.min(dur, 60) });
+        addMsg({
+            id: r.id, sender_id: S.me.tg_id, type: 'voice',
+            voice_dur: dur, created_at: Date.now() / 1000,
+        });
+        haptic('success');
+    } catch (e) {
+        toast('⚠️ ' + e.message);
+    }
+}
+
+function recUI(on) {
+    const btn = document.getElementById('mic-btn');
+    const input = document.getElementById('msg-input');
+    clearInterval(voice.tick);
+    if (on) {
+        btn.textContent = '⏹';
+        btn.classList.add('rec');
+        try { tg.HapticFeedback && tg.HapticFeedback.impactOccurred('medium'); } catch (e) {}
+        voice.tick = setInterval(() => {
+            const s = (Date.now() - voice.start) / 1000;
+            input.placeholder = '⏺ ' + fmtDur(s) + ' / 1:00 — нажми ⏹ чтобы отправить';
+        }, 400);
+    } else {
+        btn.textContent = '🎤';
+        btn.classList.remove('rec');
+        input.placeholder = 'Написать сообщение.....';
+    }
+}
+
+function blobToDataURL(blob) {
+    return new Promise((res, rej) => {
+        const fr = new FileReader();
+        fr.onload = () => res(fr.result);
+        fr.onerror = rej;
+        fr.readAsDataURL(blob);
+    });
 }
 
 /* ---------- Жалоба ---------- */

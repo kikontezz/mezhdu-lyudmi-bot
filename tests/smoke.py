@@ -6,7 +6,7 @@ import json
 import os
 import sys
 import time
-from urllib.parse import urlencode
+from urllib.parse import quote, urlencode
 
 os.environ["BOT_TOKEN"] = "123456:TEST-TOKEN"
 os.environ["ADMIN_IDS"] = "999"
@@ -198,6 +198,44 @@ check("после блока не матчатся", s1 == "queued" and s2 == "q
 r = client.get("/api/admin/banned", headers=h(999))
 check("список банов", r.status_code == 200 and isinstance(r.get_json(), list),
       str(r.get_json()))
+
+# --- голосовые сообщения ---
+auth(333)
+auth(444)
+client.post("/api/cancel", headers=h(111))
+client.post("/api/cancel", headers=h(222))
+r = client.post("/api/queue", headers=h(333))
+check("333 ищет", r.get_json()["status"] == "queued")
+r = client.post("/api/queue", headers=h(444))
+check("344 матчится", r.get_json()["status"] == "chat")
+
+fake_audio = "data:audio/webm;base64," + "A" * 500
+r = client.post("/api/voice", headers=h(333),
+                json={"audio": fake_audio, "dur": 2.5})
+check("голосовое принято", r.status_code == 200, str(r.get_json()))
+vid = r.get_json()["id"]
+
+r = client.get(f"/api/voice/{vid}?init_data={quote(make_init_data(444))}")
+check("пара слышит аудио", r.status_code == 200 and r.mimetype.startswith("audio/"),
+      r.mimetype)
+
+r = client.get(f"/api/voice/{vid}?init_data={quote(make_init_data(111))}")
+check("чужой не слышит (403)", r.status_code == 403)
+
+r = client.post("/api/voice", headers=h(333),
+                json={"audio": fake_audio, "dur": 100})
+check("слишком длинная запись = 400", r.status_code == 400)
+
+r = client.post("/api/voice", headers=h(333),
+                json={"audio": "data:text/plain;base64,AAA", "dur": 2})
+check("не-аудио = 400", r.status_code == 400)
+
+# голосовое видно в poll как voice
+r = client.get(f"/api/poll?since_msg={vid - 1}&timeout=0", headers=h(444))
+p = r.get_json()
+check("poll отдаёт тип voice",
+      p["messages"] and p["messages"][0].get("type") == "voice",
+      str(p["messages"][:1]))
 
 print()
 if fails:

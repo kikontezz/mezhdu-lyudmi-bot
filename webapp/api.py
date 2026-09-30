@@ -1,10 +1,11 @@
 """API Mini App: авторизация, профили, очередь, чат (long-polling), жалобы, админка."""
 
+import base64
 import os
 import threading
 import time
 
-from flask import Blueprint, jsonify, request
+from flask import Blueprint, Response, jsonify, request
 
 from .db import DB, now
 from .moderation import (
@@ -307,7 +308,7 @@ def _poll_state(tg_id: int, since_msg: int, since_note: int) -> dict:
     if chat:
         peer = _peer_info(_peer_id(chat, tg_id))
         messages = DB.all(
-            "SELECT id, sender_id, text, created_at FROM messages "
+            "SELECT id, sender_id, text, type, voice_dur, created_at FROM messages "
             "WHERE chat_id = ? AND id > ? ORDER BY id",
             (chat["id"], since_msg),
         )
@@ -418,6 +419,88 @@ def send_message():
     peer_id = _peer_id(chat, tg_id)
     notify.push(peer_id, f"💬 Новое сообщение: {text[:100]}", force=False)
     return jsonify({"id": cur.lastrowid, "chat_id": chat["id"]})
+
+
+MAX_VOICE = 700_000   # ~500KB base64 (примерно 60 секунд opus)
+MAX_VOICE_DUR = 65
+
+
+@api.post("/voice")
+def send_voice():
+    """Голосовое сообщение: dataURL аудио (base64) в БД."""
+    tg_id, user = _require()
+    if user is None:
+        return _err("Не авторизован", 401)
+    if user["banned"]:
+        return _err("Аккаунт заблокирован", 403)
+
+    data = request.get_json(silent=True) or {}
+    audio = data.get("audio") or ""
+    try:
+        dur = float(data.get("dur") or 0)
+    except (TypeError, ValueError):
+        return _err("Неверная длительность")
+
+    if not audio.startswith("data:audio/") or ";base64," not in audio:
+        return _err("Неверный формат аудио")
+    if len(audio) > MAX_VOICE:
+        return _err("Запись слишком длинная (максимум 60 секунд)")
+    if not (0.5 <= dur <= MAX_VOICE_DUR):
+        return _err("Длительность записи: от 1 до 60 секунд")
+
+    chat = _active_chat(tg_id)
+    if not chat:
+        return _err("Нет активного чата", 409)
+
+    cur = DB.execute(
+        "INSERT INTO messages (chat_id, sender_id, text, type, voice_data, voice_dur, created_at) "
+        "VALUES (?, ?, '', 'voice', ?, ?, ?)",
+        (chat["id"], tg_id, audio, dur, now()),
+    )
+    peer_id = _peer_id(chat, tg_id)
+    notify.push(peer_id, "🎤 Голосовое сообщение", force=False)
+    return jsonify({"id": cur.lastrowid, "chat_id": chat["id"]})
+
+
+def _check_voice_access(msg_id: int) -> int | None:
+    """Проверяет, что tg_id имеет доступ к голосовому. Возвращает tg_id или None."""
+    init_data = request.args.get("init_data") or request.headers.get(
+        "X-Telegram-Init-Data", "")
+    if DEV_FAKE and init_data.startswith("dev:"):
+        try:
+            tg_id = int(init_data[4:])
+        except ValueError:
+            return None
+    else:
+        u = validate_init_data(init_data, BOT_TOKEN)
+        if not u:
+            return None
+        tg_id = int(u["id"])
+
+    m = DB.one("SELECT chat_id FROM messages WHERE id = ? AND type = 'voice'",
+               (int(msg_id),))
+    if not m:
+        return None
+    chat = DB.one("SELECT user_a, user_b FROM chats WHERE id = ?", (m["chat_id"],))
+    if not chat or tg_id not in (chat["user_a"], chat["user_b"]):
+        return None
+    return tg_id
+
+
+@api.get("/voice/<int:msg_id>")
+def get_voice(msg_id):
+    """Отдаёт аудио участнику чата (для <audio src>)."""
+    if _check_voice_access(msg_id) is None:
+        return _err("Нет доступа", 403)
+    m = DB.one(
+        "SELECT voice_data FROM messages WHERE id = ? AND type = 'voice'",
+        (int(msg_id),),
+    )
+    if not m or not m.get("voice_data"):
+        return _err("Не найдено", 404)
+    header, b64 = m["voice_data"].split(";base64,", 1)
+    mime = header.replace("data:", "") or "audio/webm"
+    return Response(base64.b64decode(b64), mimetype=mime)
 
 
 # --------------------------------------------------------------------------

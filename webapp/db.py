@@ -42,6 +42,9 @@ CREATE TABLE IF NOT EXISTS messages (
     chat_id    INTEGER,
     sender_id  BIGINT,
     text       TEXT,
+    type       TEXT DEFAULT 'text',
+    voice_data TEXT,
+    voice_dur  REAL,
     created_at INTEGER,
     reported   INTEGER DEFAULT 0
 );
@@ -120,6 +123,9 @@ def _migrate(cur, conn):
         "ALTER TABLE notifications ADD COLUMN force INTEGER DEFAULT 1",
         "ALTER TABLE notifications ADD COLUMN sent INTEGER DEFAULT 0",
         "ALTER TABLE users ADD COLUMN banned_reason TEXT",
+        "ALTER TABLE messages ADD COLUMN type TEXT DEFAULT 'text'",
+        "ALTER TABLE messages ADD COLUMN voice_data TEXT",
+        "ALTER TABLE messages ADD COLUMN voice_dur REAL",
     ]
     for stmt in migrations:
         try:
