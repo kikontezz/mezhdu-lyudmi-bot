@@ -27,6 +27,13 @@ logger = logging.getLogger(__name__)
 BOT_TOKEN = os.getenv("DISCORD_BOT_TOKEN", "")
 CHANNEL_ID = int(os.getenv("DISCORD_CHANNEL_ID", "0") or 0)
 
+# Discord ID модераторов, которым жалобы уходят в личку (видят только они).
+# Если не заданы — фолбэк: общий канал DISCORD_CHANNEL_ID.
+ADMIN_IDS = {
+    int(x) for x in os.getenv("DISCORD_ADMIN_IDS", "").replace(" ", "").split(",")
+    if x.strip().lstrip("-").isdigit()
+}
+
 intents = discord.Intents.default()
 bot = commands.Bot(command_prefix="!", intents=intents)
 
@@ -44,14 +51,16 @@ class ReportView(discord.ui.View):
         self.accused_tg = accused_tg
 
     async def _check(self, interaction: discord.Interaction) -> bool:
-        perms = interaction.user.guild_permissions
-        if perms.administrator or perms.manage_guild:
-            return True
-        await interaction.response.send_message(
-            "⛔ Разбирать жалобы может только модератор с правами администратора.",
-            ephemeral=True,
-        )
-        return False
+        if ADMIN_IDS:
+            ok = interaction.user.id in ADMIN_IDS
+            deny = "⛔ Разбирать жалобы может только модератор."
+        else:
+            perms = interaction.user.guild_permissions
+            ok = perms.administrator or perms.manage_guild
+            deny = "⛔ Разбирать жалобы может только модератор с правами администратора."
+        if not ok:
+            await interaction.response.send_message(deny, ephemeral=True)
+        return ok
 
     @discord.ui.button(label="Забанить", style=discord.ButtonStyle.danger, emoji="⛔")
     async def ban_button(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -109,12 +118,37 @@ def _build_embed(d: dict) -> tuple[str, discord.Embed]:
 
 
 async def _send_report(d: dict):
+    """Отправляет жалобу: ЛС модераторам (видят только они) → фолбэк в канал."""
     global _channel
+    content, embed = _build_embed(d)
+
+    # 1) ЛИЧНЫЕ СООБЩЕНИЯ модераторам — видит только тот, кому отправлено
+    delivered = False
+    for uid in sorted(ADMIN_IDS):
+        try:
+            user = await bot.fetch_user(uid)
+            await user.send(
+                embed=embed,
+                view=ReportView(d["report_id"], d["accused_tg"]),
+            )
+            delivered = True
+        except Exception as exc:
+            logger.warning("Не удалось отправить ЛС %s: %s", uid, exc)
+    if delivered:
+        logger.info("Жалоба #%s отправлена в ЛС модераторам", d["report_id"])
+        return
+    if ADMIN_IDS:
+        logger.warning("ЛС недоступны — пробуем канал")
+
+    # 2) ФОЛБЭК: общий канал (если ЛС не заданы или закрыты)
+    if not CHANNEL_ID:
+        logger.warning("DISCORD_ADMIN_IDS и DISCORD_CHANNEL_ID не заданы — "
+                       "жалоба #%s только в БД", d["report_id"])
+        return
     if _channel is None:
         _channel = await bot.fetch_channel(CHANNEL_ID)
-    content, embed = _build_embed(d)
-    view = ReportView(d["report_id"], d["accused_tg"])
-    await _channel.send(content=content, embed=embed, view=view)
+    await _channel.send(content=content, embed=embed,
+                        view=ReportView(d["report_id"], d["accused_tg"]))
 
 
 def submit_report(d: dict):
