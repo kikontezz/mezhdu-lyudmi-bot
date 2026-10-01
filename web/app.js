@@ -59,6 +59,72 @@ function openDiscord() {
     try { tg.openLink(DISCORD_URL); } catch (e) { window.open(DISCORD_URL, '_blank'); }
 }
 
+/* ---------- Звуки поиска (мягкие синтезированные тона) ---------- */
+
+function soundsOn() {
+    return localStorage.getItem('sounds') !== '0';
+}
+
+let _audioCtx = null;
+function getAudioCtx() {
+    if (!soundsOn()) return null;
+    try {
+        if (!_audioCtx) {
+            _audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        }
+        if (_audioCtx.state === 'suspended') _audioCtx.resume();
+        return _audioCtx;
+    } catch (e) { return null; }
+}
+
+function playTone(freq, delay, dur, vol) {
+    const ctx = getAudioCtx();
+    if (!ctx) return;
+    const t0 = ctx.currentTime + delay;
+
+    // основной тон: мягкая атака, долгое затухание
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = 'sine';
+    osc.frequency.value = freq;
+    gain.gain.setValueAtTime(0, t0);
+    gain.gain.linearRampToValueAtTime(vol, t0 + 0.09);
+    gain.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+    osc.connect(gain).connect(ctx.destination);
+    osc.start(t0);
+    osc.stop(t0 + dur + 0.1);
+
+    // лёгкий хорус (чуть расстроенный дубль) — объёмнее и теплее
+    const osc2 = ctx.createOscillator();
+    const gain2 = ctx.createGain();
+    osc2.type = 'sine';
+    osc2.frequency.value = freq * 1.006;
+    gain2.gain.setValueAtTime(0, t0 + 0.05);
+    gain2.gain.linearRampToValueAtTime(vol * 0.45, t0 + 0.15);
+    gain2.gain.exponentialRampToValueAtTime(0.0001, t0 + dur * 1.2);
+    osc2.connect(gain2).connect(ctx.destination);
+    osc2.start(t0);
+    osc2.stop(t0 + dur * 1.3 + 0.1);
+}
+
+function soundSearchStart() {
+    // успокаивающий нисходящий «вдох»: ми → ля
+    playTone(659.25, 0, 1.2, 0.07);
+    playTone(440.0, 0.24, 1.6, 0.06);
+}
+
+function soundSearchFound() {
+    // тёплый мажорный арпеджио вверх — «собеседник найден»
+    [523.25, 659.25, 783.99, 1046.5].forEach((f, i) =>
+        playTone(f, i * 0.11, 1.4, 0.07));
+}
+
+function soundSearchEnd() {
+    // мягкий возврат при отмене: ля → ми
+    playTone(440.0, 0, 0.9, 0.06);
+    playTone(329.63, 0.18, 1.1, 0.05);
+}
+
 /* ---------- Навигация ---------- */
 
 function show(name) {
@@ -103,6 +169,13 @@ async function init() {
             toast('⚠️ ' + e.message);
         }
     });
+
+    const sndBox = document.getElementById('snd-on');
+    sndBox.checked = soundsOn();
+    sndBox.addEventListener('change', () => {
+        localStorage.setItem('sounds', sndBox.checked ? '1' : '0');
+        if (sndBox.checked) soundSearchFound(); // проверочный тон
+    });
     show('home');
 }
 
@@ -110,6 +183,7 @@ async function init() {
 
 async function startSearch() {
     show('search');
+    soundSearchStart();
     try {
         const r = await api('/queue', {});
         if (r.status === 'chat') {
@@ -125,12 +199,14 @@ async function startSearch() {
 
 function showFound() {
     haptic('success');
+    soundSearchFound();
     setAvatar(document.getElementById('found-avatar'), S.peer && S.peer.avatar);
     show('found');
 }
 
 async function cancelSearch() {
     try { await api('/cancel', {}); } catch (e) {}
+    soundSearchEnd();
     show('home');
 }
 
