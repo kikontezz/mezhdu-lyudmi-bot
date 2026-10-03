@@ -569,7 +569,7 @@ async function startPoll() {
     while (S.pollActive) {
         try {
             const p = await api(
-                `/poll?since_msg=${S.lastMsg}&since_note=${S.lastNote}&timeout=25`);
+                `/poll?since_msg=${S.lastMsg}&since_note=${S.lastNote}&timeout=10`);
             handlePoll(p);
         } catch (e) {
             await sleep(3000);
