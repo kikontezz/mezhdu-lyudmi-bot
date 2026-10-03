@@ -13,6 +13,7 @@ const S = {
     screen: 'home',
     status: 'idle',      // idle | queued | chat | banned
     chatId: null,
+    lastChatId: null,   // последний чат — для жалобы после завершения
     peer: null,
     lastMsg: 0,
     lastNote: 0,
@@ -222,6 +223,7 @@ function openChat() {
 async function leaveChat() {
     try { await api('/leave', {}); } catch (e) {}
     closeMenu();
+    S.lastChatId = S.chatId;   // сохраняем для жалобы после завершения
     S.chatId = null;
     S.peer = null;
     S.status = 'idle';
@@ -236,6 +238,7 @@ async function blockPeer() {
         await api('/block', {});
         toast('🚫 Собеседник заблокирован');
         haptic('warning');
+        S.lastChatId = S.chatId;
         S.chatId = null;
         S.peer = null;
         S.status = 'idle';
@@ -551,11 +554,11 @@ async function sendReport() {
         await api('/report', {
             reason,
             evidence: document.getElementById('report-evidence').value,
-            chat_id: S.chatId,
+            chat_id: S.chatId || S.lastChatId,
         });
         haptic('warning');
         toast('📨 Жалоба отправлена модератору');
-        show('chat');
+        show(S.screen === 'ended' ? 'ended' : 'chat');
     } catch (e) {
         toast('⚠️ ' + e.message);
     }
@@ -619,6 +622,7 @@ function handlePoll(p) {
     } else if (p.status === 'idle') {
         if (prev === 'chat') {
             S.pollActive = false;
+            S.lastChatId = S.chatId;
             S.chatId = null;
             S.peer = null;
             haptic('warning');
